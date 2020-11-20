@@ -53,6 +53,8 @@ module Archive : sig
     val lib_file : t -> dir:Path.Build.t -> ext_lib:string -> Path.Build.t
 
     val dll_file : t -> dir:Path.Build.t -> ext_dll:string -> Path.Build.t
+
+    val add_suffix : t -> suffix:string -> t
   end
 
   type t

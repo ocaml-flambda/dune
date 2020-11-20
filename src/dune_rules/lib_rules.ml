@@ -122,14 +122,15 @@ let ocamlmklib ~loc ~c_library_flags ~sctx ~dir ~expander ~foreign_objects
     && List.for_all foreign_objects ~f:Foreign.Object.both_byte_and_native
   in
   let ctx = Super_context.context sctx in
-  let { Lib_config.ext_lib; ext_dll; _ } = ctx.lib_config in
-  let static_target =
-    Foreign.Archive.Name.lib_file archive_name ~dir ~ext_lib
-  in
-  let build ~custom ~sandbox ~o_files targets =
+  let build ~custom ~sandbox ~o_files ?stubs_archive_name targets =
     (* CR amokhov: Should we include [vlib_stubs_o_files] into both static and
        dynamic libraries? *)
     let o_files = vlib_stubs_o_files @ o_files in
+    let stubs_archive_name =
+      match stubs_archive_name with
+      | None -> archive_name
+      | Some stubs_archive_name -> stubs_archive_name
+    in
     Super_context.add_rule sctx ~sandbox ~dir ~loc
       (let cclibs_args =
          Expander.expand_and_eval_set expander c_library_flags
@@ -144,6 +145,8 @@ let ocamlmklib ~loc ~c_library_flags ~sctx ~dir ~expander ~foreign_objects
              Command.Args.empty )
          ; A "-o"
          ; Path (Path.build (Foreign.Archive.Name.path ~dir archive_name))
+         ; A "-oc"
+         ; Path (Path.build (Foreign.Archive.Name.path ~dir stubs_archive_name))
          ; Deps o_files
          ; Dyn
              (* The [c_library_flags] is needed only for the [dynamic_target]
@@ -158,10 +161,14 @@ let ocamlmklib ~loc ~c_library_flags ~sctx ~dir ~expander ~foreign_objects
          ; Hidden_targets targets
          ])
   in
+  let { Lib_config.ext_lib; ext_dll; _ } = ctx.lib_config in
   let dynamic_target =
     Foreign.Archive.Name.dll_file archive_name ~dir ~ext_dll
   in
   if build_targets_together then
+    let static_target =
+      Foreign.Archive.Name.lib_file archive_name ~dir ~ext_lib
+    in
     let o_files = List.map foreign_objects ~f:Foreign.Object.build_path in
     (* Build both the static and dynamic targets in one [ocamlmklib] invocation,
        unless dynamically linked foreign archives are disabled. *)
@@ -174,8 +181,31 @@ let ocamlmklib ~loc ~c_library_flags ~sctx ~dir ~expander ~foreign_objects
     let o_files =
       List.filter_map foreign_objects ~f:Foreign.Object.build_path_native
     in
+    (* Separate .a stubs archives are needed if the stubs differ between
+       bytecode and native.  Otherwise we could end up linking bytecode
+       stubs into a native code program, or vice versa. *)
+    let separate_dot_a_files_needed =
+      not (List.for_all foreign_objects ~f:Foreign.Object.both_byte_and_native)
+    in
+    let stubs_archive_name =
+      (* XXX This is not the right check but it wasn't clear how to get
+         [cctx] or [modes] to this point *)
+      let is_bytecode = ctx.dynamically_linked_foreign_archives in
+      if separate_dot_a_files_needed && is_bytecode then
+        Foreign.Archive.Name.add_suffix archive_name ~suffix:"_byte"
+      else
+        archive_name
+    in
+    let static_target_stubs =
+      Foreign.Archive.Name.lib_file stubs_archive_name ~dir ~ext_lib
+    in
+
+(* XXX ocamlmklib produces .cma and .cmxa at the same time.  So we are
+   going to have to run it twice. *)
+
     (* Build the static target only by passing the [-custom] flag. *)
     build ~o_files ~sandbox:Sandbox_config.no_special_requirements ~custom:true
+      ~stubs_archive_name
       [ static_target ];
     (* The second rule (below) may fail on some platforms, but the build will
        succeed as long as the resulting dynamic library isn't actually needed

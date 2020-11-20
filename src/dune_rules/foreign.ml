@@ -54,6 +54,8 @@ module Archive = struct
 
     let dll_file archive_name ~dir ~ext_dll =
       Path.Build.relative dir (sprintf "dll%s%s" archive_name ext_dll)
+
+    let add_suffix t ~suffix = t ^ suffix
   end
 
   (** Archive directories can appear as part of the [(foreign_archives ...)]
