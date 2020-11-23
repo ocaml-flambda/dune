@@ -153,7 +153,7 @@ module Buildable = struct
     ; modules : Ordered_set_lang.t
     ; modules_without_implementation : Ordered_set_lang.t
     ; libraries : Lib_dep.t list
-    ; foreign_archives : (Loc.t * Foreign.Archive.t) list
+    ; foreign_archives : (Loc.t * Foreign.Archive.t) list Mode.Dict.t
     ; foreign_stubs : Foreign.Stubs.t list
     ; preprocess : Preprocess.With_instrumentation.t Preprocess.Per_module.t
     ; preprocessor_deps : Dep_conf.t list
@@ -273,6 +273,7 @@ module Buildable = struct
            the "lib" prefix, however, since standard linkers require it). *)
         | Some name -> (loc, Foreign.Archive.stubs name) :: foreign_archives
     in
+    let foreign_archives = Mode.Dict.make_both foreign_archives in
     { loc
     ; preprocess
     ; preprocessor_deps
@@ -288,7 +289,8 @@ module Buildable = struct
     }
 
   let has_foreign t =
-    List.is_non_empty t.foreign_stubs || List.is_non_empty t.foreign_archives
+    List.is_non_empty t.foreign_stubs
+      || Mode.Dict.exists t.foreign_archives ~f:List.is_non_empty
 end
 
 module Public_lib = struct
@@ -718,19 +720,19 @@ module Library = struct
 
   let has_foreign t = Buildable.has_foreign t.buildable
 
-  let foreign_archives t =
+  let foreign_archives t mode =
     ( if List.is_empty t.buildable.foreign_stubs then
       []
     else
       [ Foreign.Archive.stubs (Lib_name.Local.to_string (snd t.name)) ] )
-    @ List.map ~f:snd t.buildable.foreign_archives
+    @ List.map ~f:snd (Mode.Dict.get t.buildable.foreign_archives mode)
 
-  let foreign_lib_files t ~dir ~ext_lib =
-    List.map (foreign_archives t) ~f:(fun archive ->
-        Foreign.Archive.lib_file ~archive ~dir ~ext_lib)
+  let foreign_lib_files t mode ~dir ~ext_lib =
+    List.map (foreign_archives t mode) ~f:(fun archive ->
+        Foreign.Archive.lib_file ~archive mode ~dir ~ext_lib)
 
   let foreign_dll_files t ~dir ~ext_dll =
-    List.map (foreign_archives t) ~f:(fun archive ->
+    List.map (foreign_archives t Byte) ~f:(fun archive ->
         Foreign.Archive.dll_file ~archive ~dir ~ext_dll)
 
   let archive t ~dir ~ext =
@@ -798,7 +800,10 @@ module Library = struct
       | Public p -> Public (conf.project, p.package)
     in
     let virtual_library = is_virtual conf in
-    let foreign_archives = foreign_lib_files conf ~dir ~ext_lib in
+    let foreign_archives =
+      Mode.Dict.make ~byte:(foreign_lib_files conf Byte ~dir ~ext_lib)
+        ~native:(foreign_lib_files conf Native ~dir ~ext_lib)
+    in
     let native_archives =
       [ Path.Build.relative dir (Lib_name.Local.to_string lib_name ^ ext_lib) ]
     in

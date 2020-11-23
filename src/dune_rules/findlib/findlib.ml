@@ -368,6 +368,7 @@ end = struct
             let sort = List.sort ~compare:Path.compare in
             (sort foreign_archives, sort native_archives)
         in
+        let foreign_archives = Mode.Dict.make_both foreign_archives in
         Lib_info.create ~loc ~name:t.name ~kind ~status ~src_dir ~orig_src_dir
           ~obj_dir ~version ~synopsis ~main_module_name ~sub_systems ~requires
           ~foreign_objects ~plugins ~archives ~ppx_runtime_deps

@@ -94,7 +94,7 @@ val archives : 'path t -> 'path list Mode.Dict.t
    to [native_lib_files] for consistent naming with [foreign_dll_files]. *)
 
 (** All the [lib*.a] files for stubs *)
-val foreign_archives : 'path t -> 'path list
+val foreign_archives : 'path t -> 'path list Mode.Dict.t
 
 (** The [lib*.a] files for the OCaml code when compiling to native mode *)
 val native_archives : 'path t -> 'path list
@@ -205,7 +205,7 @@ val create :
   -> plugins:'a list Mode.Dict.t
   -> archives:'a list Mode.Dict.t
   -> ppx_runtime_deps:(Loc.t * Lib_name.t) list
-  -> foreign_archives:'a list
+  -> foreign_archives:'a list Mode.Dict.t
   -> native_archives:'a list
   -> foreign_dll_files:'a list
   -> jsoo_runtime:'a list

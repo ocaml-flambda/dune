@@ -23,9 +23,9 @@ let build_lib (lib : Library.t) ~sctx ~modules ~expander ~flags ~dir ~mode
   Result.iter (Context.compiler ctx mode) ~f:(fun compiler ->
       let target = Library.archive lib ~dir ~ext:(Mode.compiled_lib_ext mode) in
       let stubs_flags =
-        List.concat_map (Library.foreign_archives lib) ~f:(fun archive ->
+        List.concat_map (Library.foreign_archives lib mode) ~f:(fun archive ->
             let lname =
-              "-l" ^ Foreign.Archive.(name archive |> Name.to_string)
+              "-l" ^ Foreign.Archive.(name archive mode |> Name.to_string)
             in
             let cclib = [ "-cclib"; lname ] in
             let dllib = [ "-dllib"; lname ] in
@@ -114,23 +114,26 @@ let gen_wrapped_compat_modules (lib : Library.t) cctx =
 
 (* Rules for building static and dynamic libraries using [ocamlmklib]. *)
 let ocamlmklib ~loc ~c_library_flags ~sctx ~dir ~expander ~foreign_objects
-    ~vlib_stubs_o_files ~archive_name ~build_targets_together =
+    ~vlib_stubs_o_files ~archive_name ~build_targets_together:_ =
   (* We can't build static and dynamic libraries together if one of the object
      files should be treated specially. *)
   let build_targets_together =
+    (* XXX For the moment, just turn this off.
+       In the case where split bytecode/native stubs are *not* present then
+       presumably a copy action or similar should be used to produce the
+       second .a archive. *)
+    false
+    (*
     build_targets_together
     && List.for_all foreign_objects ~f:Foreign.Object.both_byte_and_native
+    *)
   in
   let ctx = Super_context.context sctx in
-  let build ~custom ~sandbox ~o_files ?stubs_archive_name targets =
+  let build ~custom ~sandbox ~o_files ?(stubs_archive_name = archive_name)
+        targets =
     (* CR amokhov: Should we include [vlib_stubs_o_files] into both static and
        dynamic libraries? *)
     let o_files = vlib_stubs_o_files @ o_files in
-    let stubs_archive_name =
-      match stubs_archive_name with
-      | None -> archive_name
-      | Some stubs_archive_name -> stubs_archive_name
-    in
     Super_context.add_rule sctx ~sandbox ~dir ~loc
       (let cclibs_args =
          Expander.expand_and_eval_set expander c_library_flags
@@ -162,13 +165,15 @@ let ocamlmklib ~loc ~c_library_flags ~sctx ~dir ~expander ~foreign_objects
          ])
   in
   let { Lib_config.ext_lib; ext_dll; _ } = ctx.lib_config in
+  let static_target =
+    let archive_name = Foreign.Archive.Name.add_mode_suffix archive_name Byte in
+    Foreign.Archive.Name.lib_file archive_name ~dir ~ext_lib
+  in
   let dynamic_target =
+    let archive_name = Foreign.Archive.Name.add_mode_suffix archive_name Byte in
     Foreign.Archive.Name.dll_file archive_name ~dir ~ext_dll
   in
   if build_targets_together then
-    let static_target =
-      Foreign.Archive.Name.lib_file archive_name ~dir ~ext_lib
-    in
     let o_files = List.map foreign_objects ~f:Foreign.Object.build_path in
     (* Build both the static and dynamic targets in one [ocamlmklib] invocation,
        unless dynamically linked foreign archives are disabled. *)
@@ -177,7 +182,7 @@ let ocamlmklib ~loc ~c_library_flags ~sctx ~dir ~expander ~foreign_objects
         [ static_target; dynamic_target ]
       else
         [ static_target ] )
-  else
+  else begin
     let o_files =
       List.filter_map foreign_objects ~f:Foreign.Object.build_path_native
     in
@@ -185,29 +190,49 @@ let ocamlmklib ~loc ~c_library_flags ~sctx ~dir ~expander ~foreign_objects
        bytecode and native.  Otherwise we could end up linking bytecode
        stubs into a native code program, or vice versa. *)
     let separate_dot_a_files_needed =
+      true (* XXX as above *)
+      (*
       not (List.for_all foreign_objects ~f:Foreign.Object.both_byte_and_native)
+      *)
     in
-    let stubs_archive_name =
-      (* XXX This is not the right check but it wasn't clear how to get
-         [cctx] or [modes] to this point *)
-      let is_bytecode = ctx.dynamically_linked_foreign_archives in
-      if separate_dot_a_files_needed && is_bytecode then
-        Foreign.Archive.Name.add_suffix archive_name ~suffix:"_byte"
-      else
-        archive_name
+    let o_files_byte =
+      List.filter_map foreign_objects ~f:Foreign.Object.build_path_byte
     in
-    let static_target_stubs =
-      Foreign.Archive.Name.lib_file stubs_archive_name ~dir ~ext_lib
+    let o_files_native =
+      List.filter_map foreign_objects ~f:Foreign.Object.build_path_native
     in
-
-(* XXX ocamlmklib produces .cma and .cmxa at the same time.  So we are
-   going to have to run it twice. *)
-
-    (* Build the static target only by passing the [-custom] flag. *)
-    build ~o_files ~sandbox:Sandbox_config.no_special_requirements ~custom:true
-      ~stubs_archive_name
-      [ static_target ];
-    (* The second rule (below) may fail on some platforms, but the build will
+    (* Build just the static target(s) by passing the [-custom] flag.
+       If we have separate bytecode and native stubs, rather more work is
+       required. *)
+    if not separate_dot_a_files_needed then begin
+      build ~o_files
+        ~sandbox:Sandbox_config.needs_sandboxing
+        ~custom:true
+        [ static_target ]
+    end else begin
+      let stubs_archive_name_native =
+        Foreign.Archive.Name.add_mode_suffix archive_name Native
+      in
+      let static_target_native =
+        Foreign.Archive.Name.lib_file stubs_archive_name_native ~dir ~ext_lib
+      in
+      (* This and the next action are sandboxed to filter out unwanted
+         ocamlmklib by-products (and be certain there is no accidental
+         clobbering of files). *)
+      Printf.printf "Bytecode target = %s, native target = %s\n%!"
+        (Path.Local_gen.to_string static_target)
+        (Path.Local_gen.to_string static_target_native);
+      build ~o_files:o_files_byte
+        ~sandbox:Sandbox_config.needs_sandboxing
+        ~custom:true
+        [ static_target ];
+      build ~o_files:o_files_native
+        ~sandbox:Sandbox_config.needs_sandboxing
+        ~stubs_archive_name:stubs_archive_name_native
+        ~custom:true
+        [ static_target_native ]
+    end;
+    (* This next rule may fail on some platforms, but the build will
        succeed as long as the resulting dynamic library isn't actually needed
        (the rule will not fire in that case). We can't tell ocamlmklib to build
        only the dynamic target, so it will actually build *both* and we
@@ -219,11 +244,10 @@ let ocamlmklib ~loc ~c_library_flags ~sctx ~dir ~expander ~foreign_objects
        flag, which always produces the static target and sometimes produces the
        dynamic target too. *)
     if ctx.dynamically_linked_foreign_archives then
-      let o_files =
-        List.filter_map foreign_objects ~f:Foreign.Object.build_path_byte
-      in
-      build ~o_files ~sandbox:Sandbox_config.needs_sandboxing ~custom:false
+      build ~o_files:o_files_byte ~sandbox:Sandbox_config.needs_sandboxing
+        ~custom:false
         [ dynamic_target ]
+  end
 
 (* Build a static and a dynamic archive for a foreign library. Note that the
    dynamic archive can't be built on some platforms, in which case the rule that
@@ -288,8 +312,11 @@ let build_shared lib ~modules ~sctx ~dir ~flags =
         Library.archive lib ~dir ~ext
       in
       let include_flags_for_relative_foreign_archives =
+        let foreign_archives =
+          Mode.Dict.get lib.buildable.foreign_archives Native
+        in
         Command.Args.S
-          (List.map lib.buildable.foreign_archives ~f:(fun (_loc, archive) ->
+          (List.map foreign_archives ~f:(fun (_loc, archive) ->
                let dir = Foreign.Archive.dir_path ~dir archive in
                Command.Args.S [ A "-I"; Path (Path.build dir) ]))
       in
@@ -297,7 +324,7 @@ let build_shared lib ~modules ~sctx ~dir ~flags =
       let build =
         Build.with_no_targets
           (Build.paths
-             ( Library.foreign_lib_files lib ~dir ~ext_lib
+             ( Library.foreign_lib_files lib Native ~dir ~ext_lib
              |> List.map ~f:Path.build ))
         >>> Command.run ~dir:(Path.build ctx.build_dir) (Ok ocamlopt)
               [ Command.Args.dyn (Ocaml_flags.get flags Native)

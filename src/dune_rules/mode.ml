@@ -54,6 +54,8 @@ module Dict = struct
 
   let for_all { byte; native } ~f = f byte && f native
 
+  let exists { byte; native } ~f = f byte || f native
+
   let to_dyn to_dyn { byte; native } =
     let open Dyn.Encoder in
     record [ ("byte", to_dyn byte); ("native", to_dyn native) ]

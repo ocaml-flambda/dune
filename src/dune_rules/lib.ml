@@ -398,8 +398,10 @@ module Link_params = struct
     }
 
   let get t (mode : Link_mode.t) =
-    let lib_files = Lib_info.foreign_archives t.info
-    and dll_files = Lib_info.foreign_dll_files t.info in
+    let lib_files =
+      Mode.Dict.get (Lib_info.foreign_archives t.info) (Link_mode.mode mode)
+    in
+    let dll_files = Lib_info.foreign_dll_files t.info in
     (* OCaml library archives [*.cma] and [*.cmxa] are directly listed in the
        command line. *)
     let deps = Mode.Dict.get (Lib_info.archives t.info) (Link_mode.mode mode) in

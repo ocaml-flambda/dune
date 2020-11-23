@@ -54,20 +54,25 @@ module Archive : sig
 
     val dll_file : t -> dir:Path.Build.t -> ext_dll:string -> Path.Build.t
 
-    val add_suffix : t -> suffix:string -> t
+    val add_mode_suffix : t -> Mode.t -> t
   end
 
   type t
 
   val dir_path : dir:Path.Build.t -> t -> Path.Build.t
 
-  val name : t -> Name.t
+  val name : t -> Mode.t -> Name.t
 
   val stubs : string -> t
 
   val decode : t Dune_lang.Decoder.t
 
-  val lib_file : archive:t -> dir:Path.Build.t -> ext_lib:string -> Path.Build.t
+  val lib_file
+     : archive:t
+    -> Mode.t
+    -> dir:Path.Build.t
+    -> ext_lib:string
+    -> Path.Build.t
 
   val dll_file : archive:t -> dir:Path.Build.t -> ext_dll:string -> Path.Build.t
 end

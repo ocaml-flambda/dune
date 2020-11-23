@@ -41,6 +41,8 @@ module Dict : sig
 
   val for_all : 'a t -> f:('a -> bool) -> bool
 
+  val exists : 'a t -> f:('a -> bool) -> bool
+
   val to_dyn : ('a -> Dyn.t) -> 'a t -> Dyn.t
 
   module List : sig

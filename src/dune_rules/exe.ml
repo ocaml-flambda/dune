@@ -123,8 +123,10 @@ end
 let exe_path_from_name cctx ~name ~(linkage : Linkage.t) =
   Path.Build.relative (CC.dir cctx) (name ^ linkage.ext)
 
+let default_link_args = Mode.Dict.make_both (Build.return Command.Args.empty)
+
 let link_exe ~loc ~name ~(linkage : Linkage.t) ~cm_files ~link_time_code_gen
-    ~promote ?(link_args = Build.return Command.Args.empty) ?(o_files = []) cctx
+    ~promote ?(link_args = default_link_args) ?(o_files = []) cctx
     =
   let sctx = CC.super_context cctx in
   let ctx = SC.context sctx in
@@ -185,7 +187,7 @@ let link_exe ~loc ~name ~(linkage : Linkage.t) ~cm_files ~link_time_code_gen
            ; Deps o_files
            ; Dyn (Build.map top_sorted_cms ~f:(fun x -> Command.Args.Deps x))
            ; Fdo.Linker_script.flags fdo_linker_script
-           ; Dyn link_args
+           ; Dyn (Mode.Dict.get link_args mode)
            ])
 
 let link_js ~name ~cm_files ~promote cctx =

@@ -68,7 +68,19 @@ end = struct
           Foreign.Sources.object_files files ~dir ~ext_obj
           |> List.map ~f:(fun (obj : Foreign.Object.t) -> obj.path)
         else
-          Lib_info.foreign_archives lib )
+          let byte =
+            if modes.byte then
+              Mode.Dict.get (Lib_info.foreign_archives lib) Byte
+            else
+              []
+          in
+          let native =
+            if modes.native then
+              Mode.Dict.get (Lib_info.foreign_archives lib) Native
+            else
+              []
+          in
+          byte @ native )
       ; if_
           (native && not virtual_library)
           ((* TODO remove the if check once Lib_info.native_archives always

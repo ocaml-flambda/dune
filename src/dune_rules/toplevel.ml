@@ -120,7 +120,8 @@ let setup_rules t =
   let sctx = Compilation_context.super_context t.cctx in
   Exe.build_and_link t.cctx ~program ~linkages:[ linkage ]
     ~link_args:
-      (Build.return (Command.Args.As [ "-linkall"; "-warn-error"; "-31" ]))
+      (Build.return (Command.Args.As [ "-linkall"; "-warn-error"; "-31" ])
+        |> Mode.Dict.make_both)
     ~promote:None;
   let src = Exe.exe_path t.cctx ~program ~linkage in
   let dir = Source.stanza_dir t.source in

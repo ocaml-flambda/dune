@@ -70,7 +70,8 @@ module Lib = struct
        ; mode_paths "archives" archives
        ; mode_paths "plugins" plugins
        ; paths "foreign_objects" foreign_objects
-       ; paths "foreign_archives" (Lib_info.foreign_archives info)
+       (* mshinwell: This will presumably need a language version bump *)
+       ; mode_paths "foreign_archives" (Lib_info.foreign_archives info)
        ; paths "native_archives" (Lib_info.native_archives info)
        ; paths "jsoo_runtime" jsoo_runtime
        ; Lib_dep.L.field_encode requires ~name:"requires"
@@ -127,11 +128,10 @@ module Lib = struct
        and+ plugins = mode_paths "plugins"
        and+ foreign_objects = paths "foreign_objects"
        and+ foreign_archives =
-         if lang.version >= (2, 0) then
+         (* mshinwell: FIXME if lang.version >= (2, 0) then
            paths "foreign_archives"
-         else
-           let+ m = mode_paths "foreign_archives" in
-           m.byte
+         else *)
+           mode_paths "foreign_archives"
        and+ native_archives = paths "native_archives"
        and+ jsoo_runtime = paths "jsoo_runtime"
        and+ requires = field_l "requires" (Lib_dep.decode ~allow_re_export:true)
